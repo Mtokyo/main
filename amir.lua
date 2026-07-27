@@ -2119,9 +2119,23 @@ local function SetTreadmillFarm(e)
                     local padPos = pad:GetPivot().Position
                     local dist = (rp.Position - padPos).Magnitude
                     if dist > 10 then
-                        pcall(function() rp.CFrame = CFrame.new(padPos + Vector3.new(0, 4, 0)) end)
-                        task.wait(0.5)
+                        TreadmillFarm.Status = "Walking to "..TreadmillFarm.Target.."..."
+                        local hum = c:FindFirstChildOfClass("Humanoid")
+                        if hum then
+                            pcall(function() hum:MoveTo(padPos) end)
+                            local waited = 0
+                            while TreadmillFarm.Enabled and waited < 8 do
+                                task.wait(0.2)
+                                waited = waited + 0.2
+                                local rp2 = c and GetRootPart(c)
+                                if not rp2 then break end
+                                if (rp2.Position - padPos).Magnitude < 10 then break end
+                            end
+                        else
+                            task.wait(0.5)
+                        end
                     end
+                    if not TreadmillFarm.Enabled then break end
                     TreadmillFarm.Status = "Walking on "..TreadmillFarm.Target
                     pcall(_keypress, VK_W)
                     task.wait(0.35)
@@ -4422,6 +4436,24 @@ ST:AddButton("Copy World/Server Info",function()
         else NotifyError("Settings", "Clipboard copy failed", 3) end
     else
         NotifyError("Settings", "Executor doesn't support clipboard copy", 3)
+    end
+end)
+
+ST:AddSection("Reconnect")
+ST:AddButton("Reconnect (Same Server)",function()
+    local ok, err = pcall(function()
+        TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
+    end)
+    if not ok then
+        NotifyError("Settings", "Same-server reconnect failed ("..tostring(err)..") - server may be full/gone. Try Rejoin (New Server) instead.", 6)
+    end
+end)
+ST:AddButton("Rejoin (New Server)",function()
+    local ok, err = pcall(function()
+        TeleportService:Teleport(game.PlaceId, LocalPlayer)
+    end)
+    if not ok then
+        NotifyError("Settings", "Rejoin failed: "..tostring(err), 5)
     end
 end)
 
