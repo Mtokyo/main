@@ -2161,10 +2161,13 @@ local ItemESPScanConn = nil
 local ITEM_ESP_PATTERNS = {
     {pattern="gold", color=Color3.fromRGB(255,215,0), label="GOLD"},
     {pattern="secret", color=Color3.fromRGB(200,80,255), label="SECRET"},
-    {pattern="key", color=Color3.fromRGB(80,220,255), label="KEY"},
 }
+local ITEM_ESP_EXCLUDE = {"keycap", "floor", "platform", "tile", "wall", "ceiling", "stage"}
 local function _classifyItemName(name)
     local n = name:lower()
+    for _, ex in ipairs(ITEM_ESP_EXCLUDE) do
+        if n:find(ex) then return nil end
+    end
     for _, p in ipairs(ITEM_ESP_PATTERNS) do
         if n:find(p.pattern) then return p end
     end
@@ -4347,9 +4350,9 @@ end)
 SF:AddToggle("Enable Auto-Walk on Treadmill",false,function(v) _G._Funcs.SetTreadmillFarm(v) end)
 
 SF:AddSection("Item ESP")
-SF:AddToggle("Enable Key/Gold/Secret ESP",false,function(v) _G._Funcs.SetItemESP(v) end)
+SF:AddToggle("Enable Gold/Secret ESP",false,function(v) _G._Funcs.SetItemESP(v) end)
 SF:AddButton("Info: Item ESP",function()
-    Notify("Item ESP","Highlights any part/model on the map whose name contains 'key', 'gold', or 'secret' (color-coded), with a name tag above it. Rescans every 5s to catch newly-spawned items.",6)
+    Notify("Item ESP","Highlights parts/models named with 'gold' or 'secret' (color-coded), skipping generic floor/wall/keycap/tile pieces. Rescans every 5s. If the real item's name doesn't match, tell me its exact name and I'll target it directly.",7)
 end)
 
 SF:AddSection("Wins Farm")
