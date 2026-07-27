@@ -2154,6 +2154,104 @@ local function SetTreadmillFarm(e)
     end)
 end
 
+local ItemESPObjects = {}
+local ItemESPEnabled = false
+local ItemESPConn = nil
+local ItemESPScanConn = nil
+local ITEM_ESP_PATTERNS = {
+    {pattern="gold", color=Color3.fromRGB(255,215,0), label="GOLD"},
+    {pattern="secret", color=Color3.fromRGB(200,80,255), label="SECRET"},
+    {pattern="key", color=Color3.fromRGB(80,220,255), label="KEY"},
+}
+local function _classifyItemName(name)
+    local n = name:lower()
+    for _, p in ipairs(ITEM_ESP_PATTERNS) do
+        if n:find(p.pattern) then return p end
+    end
+    return nil
+end
+local function _createItemESP(inst, info)
+    if ItemESPObjects[inst] then return end
+    local target = inst
+    if inst:IsA("Model") then
+        target = inst.PrimaryPart or inst:FindFirstChildWhichIsA("BasePart", true)
+    end
+    if not target then return end
+    local ok = pcall(function()
+        local hl = Instance.new("Highlight")
+        hl.FillColor = info.color; hl.OutlineColor = info.color
+        hl.FillTransparency = 0.5; hl.OutlineTransparency = 0
+        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        hl.Adornee = inst
+        hl.Parent = target
+        local bb = Instance.new("BillboardGui")
+        bb.Size = UDim2.new(0,160,0,36)
+        bb.StudsOffset = Vector3.new(0,2,0)
+        bb.AlwaysOnTop = true
+        bb.Adornee = target
+        local tl = Instance.new("TextLabel")
+        tl.Size = UDim2.new(1,0,1,0); tl.BackgroundTransparency = 1
+        tl.Font = Enum.Font.GothamBold; tl.TextSize = 13
+        tl.TextColor3 = info.color; tl.TextStrokeTransparency = 0
+        tl.Text = info.label.." - "..inst.Name
+        tl.Parent = bb
+        bb.Parent = target
+        ItemESPObjects[inst] = {Highlight=hl, Billboard=bb}
+    end)
+end
+local function _removeItemESP(inst)
+    local d = ItemESPObjects[inst]
+    if not d then return end
+    pcall(function() d.Highlight:Destroy() end)
+    pcall(function() d.Billboard:Destroy() end)
+    ItemESPObjects[inst] = nil
+end
+local function _scanForItems()
+    local yieldCounter = 0
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if (obj:IsA("BasePart") or obj:IsA("Model")) and not ItemESPObjects[obj] then
+            local info = _classifyItemName(obj.Name)
+            if info then _createItemESP(obj, info) end
+        end
+        yieldCounter = yieldCounter + 1
+        if yieldCounter % 150 == 0 then task.wait() end
+    end
+end
+local function SetItemESP(e)
+    if e and game.GameId ~= KEYBOARD_UNIVERSE_ID then
+        NotifyError("Item ESP","This only works in 1 Speed Keyboard Escape",3)
+        return
+    end
+    ItemESPEnabled = e
+    if ItemESPScanConn then pcall(task.cancel, ItemESPScanConn); ItemESPScanConn = nil end
+    if ItemESPConn then ItemESPConn:Disconnect(); ItemESPConn = nil end
+    if not e then
+        for inst in pairs(ItemESPObjects) do _removeItemESP(inst) end
+        return
+    end
+    _scanForItems()
+    ItemESPConn = Workspace.DescendantAdded:Connect(function(obj)
+        if not ItemESPEnabled then return end
+        if not (obj:IsA("BasePart") or obj:IsA("Model")) then return end
+        local info = _classifyItemName(obj.Name)
+        if info then _createItemESP(obj, info) end
+    end)
+    ItemESPScanConn = task.spawn(function()
+        while ItemESPEnabled do
+            task.wait(5)
+            if ItemESPEnabled then
+                _scanForItems()
+                for inst in pairs(ItemESPObjects) do
+                    if not inst.Parent then _removeItemESP(inst) end
+                end
+            end
+        end
+    end)
+    local n = 0
+    for _ in pairs(ItemESPObjects) do n = n + 1 end
+    Notify("Item ESP","Scanning for Key/Gold/Secret items ("..n.." found so far, updates every 5s)",4)
+end
+
 _G._Funcs = {
     SetHitboxExpander=SetHitboxExpander, SendChatMessage=SendChatMessage,
     SetChatSpam=SetChatSpam, SetRemoteSpam=SetRemoteSpam, SetToolSpam=SetToolSpam,
@@ -2173,7 +2271,8 @@ _G._Funcs = {
     ClearFreecamBlocks=ClearFreecamBlocks, SetFreecamBlockSize=function(v) FreecamBlockSize=v end,
     SetFreecamCornerThickness=function(v) FreecamCornerThickness=v end,
     SetLemonFarm=SetLemonFarm, LemonFarm=LemonFarm, GetMyTycoon=GetMyTycoon, LemonRunRemotes=_lemonRunRemotes,
-    SetTreadmillFarm=SetTreadmillFarm, TreadmillFarm=TreadmillFarm
+    SetTreadmillFarm=SetTreadmillFarm, TreadmillFarm=TreadmillFarm,
+    SetItemESP=SetItemESP
 }
 end)()
 
@@ -4247,6 +4346,12 @@ SF:AddButton("Warning: paid tiers",function()
 end)
 SF:AddToggle("Enable Auto-Walk on Treadmill",false,function(v) _G._Funcs.SetTreadmillFarm(v) end)
 
+SF:AddSection("Item ESP")
+SF:AddToggle("Enable Key/Gold/Secret ESP",false,function(v) _G._Funcs.SetItemESP(v) end)
+SF:AddButton("Info: Item ESP",function()
+    Notify("Item ESP","Highlights any part/model on the map whose name contains 'key', 'gold', or 'secret' (color-coded), with a name tag above it. Rescans every 5s to catch newly-spawned items.",6)
+end)
+
 SF:AddSection("Wins Farm")
 SF:AddButton("AddWin is server->client only (confirmed not exploitable)",function()
     Notify("Speed Farm","Testing confirmed firing Remotes.AddWin doesn't change your Wins stat — it's the server notifying your client's UI after a real race, not something the client can trigger. No automation possible here.",7)
@@ -4441,16 +4546,26 @@ end)
 
 ST:AddSection("Reconnect")
 ST:AddButton("Reconnect (Same Server)",function()
+    local isPrivate = game.PrivateServerId ~= nil and game.PrivateServerId ~= ""
     local ok, err = pcall(function()
-        TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
+        if isPrivate then
+            TeleportService:TeleportToPrivateServer(game.PlaceId, game.PrivateServerId, {LocalPlayer})
+        else
+            TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
+        end
     end)
     if not ok then
         NotifyError("Settings", "Same-server reconnect failed ("..tostring(err)..") - server may be full/gone. Try Rejoin (New Server) instead.", 6)
     end
 end)
 ST:AddButton("Rejoin (New Server)",function()
+    local isPrivate = game.PrivateServerId ~= nil and game.PrivateServerId ~= ""
     local ok, err = pcall(function()
-        TeleportService:Teleport(game.PlaceId, LocalPlayer)
+        if isPrivate then
+            TeleportService:TeleportToPrivateServer(game.PlaceId, game.PrivateServerId, {LocalPlayer})
+        else
+            TeleportService:Teleport(game.PlaceId, LocalPlayer)
+        end
     end)
     if not ok then
         NotifyError("Settings", "Rejoin failed: "..tostring(err), 5)
@@ -4462,7 +4577,7 @@ local function UnloadPhaze()
     ESP.Enabled=false; Aimbot.Enabled=false; NoClip.Enabled=false; Fly.Enabled=false; KillAura.Enabled=false; HitboxExpander.Enabled=false; AntiCheatBypass.GodMode=false; ServerTroll.ChatSpam=false; ServerTroll.RemoteSpam=false; ServerTroll.ToolSpam=false
     _G._Funcs.SetCustomSpeed(false); _G._Funcs.SetNoClip(false); _G._Funcs.SetInfiniteJump(false); _G._Funcs.SetAntiFall(false); _G._Funcs.SetClickTeleport(false)
     _G._Funcs.SetCustomScale(false); _G._Funcs.SetRandomRagdoll(false); _G._Funcs.StopFESound()
-    _G._Funcs.SetFreecam(false); _G._Funcs.ClearFreecamBlocks(); _G._Funcs.SetLemonFarm(false); _G._Funcs.SetTreadmillFarm(false)
+    _G._Funcs.SetFreecam(false); _G._Funcs.ClearFreecamBlocks(); _G._Funcs.SetLemonFarm(false); _G._Funcs.SetTreadmillFarm(false); if _G._Funcs.SetItemESP then _G._Funcs.SetItemESP(false) end
     for p,_ in pairs(ESPObjects) do RemoveESP(p) end
     if _espConn then _espConn:Disconnect() end; if AimbotConnection then AimbotConnection:Disconnect() end; if FOVCircle then pcall(function() FOVCircle:Remove() end) end; if HitboxConnection then HitboxConnection:Disconnect() end; if ChatSpamConnection then ChatSpamConnection:Disconnect() end; if RemoteSpamConnection then RemoteSpamConnection:Disconnect() end; if ToolSpamConnection then ToolSpamConnection:Disconnect() end; if NoclipConnection then NoclipConnection:Disconnect() end; if FlyConnection then FlyConnection:Disconnect() end; if FlyBodyVelocity then FlyBodyVelocity:Destroy() end; if FlyBodyGyro then FlyBodyGyro:Destroy() end; if KillAuraConnection then KillAuraConnection:Disconnect() end; if GodModeConnection then GodModeConnection:Disconnect() end; if GodModeHealthConn then GodModeHealthConn:Disconnect() end; if BringLoopConnection then BringLoopConnection:Disconnect() end; if AntiRubberbandConn then AntiRubberbandConn:Disconnect() end
     SetAntiDetect(false); SetAutoRescan(false); AntiCheatBypass.HideFromAdmins=false; SetupHideFromAdmins()
