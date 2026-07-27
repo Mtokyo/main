@@ -14,6 +14,7 @@ local VirtualUser = game:GetService("VirtualUser")
 local TweenService = game:GetService("TweenService")
 local TextChatService = game:GetService("TextChatService")
 local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
 
@@ -1409,6 +1410,115 @@ function TeleportTo(cf)
         task.delay(0.5, function() _playerTeleporting = false end)
     end
 end
+local MovementRecorder = {Recording=false, Playing=false, Frames={}, Status="Idle", LoopPlayback=false}
+local _movRecConn = nil
+local _movPlayConn = nil
+local function SetMovementRecord(e)
+    if _movRecConn then _movRecConn:Disconnect(); _movRecConn = nil end
+    MovementRecorder.Recording = e
+    if not e then
+        MovementRecorder.Status = "Stopped recording ("..#MovementRecorder.Frames.." frames)"
+        return
+    end
+    if MovementRecorder.Playing then
+        NotifyError("Movement Recorder","Stop playback first",3)
+        MovementRecorder.Recording = false
+        return
+    end
+    local c = LocalPlayer.Character
+    local rp = c and GetRootPart(c)
+    if not rp then
+        NotifyError("Movement Recorder","No character found",3)
+        MovementRecorder.Recording = false
+        return
+    end
+    MovementRecorder.Frames = {}
+    local startTime = os.clock()
+    Notify("Movement Recorder","Recording started - move around now",3)
+    _movRecConn = RunService.Heartbeat:Connect(function()
+        if not MovementRecorder.Recording then return end
+        local cc = LocalPlayer.Character
+        local crp = cc and GetRootPart(cc)
+        if not crp then return end
+        local hum = cc:FindFirstChildOfClass("Humanoid")
+        local state = hum and hum:GetState()
+        table.insert(MovementRecorder.Frames, {t=os.clock()-startTime, cf=crp.CFrame, jump=(state==Enum.HumanoidStateType.Jumping or state==Enum.HumanoidStateType.Freefall)})
+        MovementRecorder.Status = "Recording... ("..#MovementRecorder.Frames.." frames)"
+    end)
+end
+local function SetMovementPlay(e)
+    if _movPlayConn then pcall(task.cancel, _movPlayConn); _movPlayConn = nil end
+    MovementRecorder.Playing = e
+    if not e then
+        MovementRecorder.Status = "Playback stopped"
+        return
+    end
+    if MovementRecorder.Recording then
+        NotifyError("Movement Recorder","Stop recording first",3)
+        MovementRecorder.Playing = false
+        return
+    end
+    if #MovementRecorder.Frames == 0 then
+        NotifyError("Movement Recorder","No recording saved yet",3)
+        MovementRecorder.Playing = false
+        return
+    end
+    _movPlayConn = task.spawn(function()
+        repeat
+            local startTime = os.clock()
+            local frames = MovementRecorder.Frames
+            local i = 1
+            while MovementRecorder.Playing and i <= #frames do
+                local c = LocalPlayer.Character
+                local rp = c and GetRootPart(c)
+                if not rp then break end
+                local target = frames[i]
+                local now = os.clock() - startTime
+                while i <= #frames and frames[i].t <= now do
+                    pcall(function() rp.CFrame = frames[i].cf end)
+                    if frames[i].jump then
+                        local hum = c:FindFirstChildOfClass("Humanoid")
+                        if hum then pcall(function() hum.Jump = true end) end
+                    end
+                    i = i + 1
+                end
+                MovementRecorder.Status = "Playing... ("..i.."/"..#frames..")"
+                RunService.Heartbeat:Wait()
+            end
+        until not MovementRecorder.Playing or not MovementRecorder.LoopPlayback
+        MovementRecorder.Playing = false
+        MovementRecorder.Status = "Playback finished"
+    end)
+end
+local function SaveMovementRecordingToFile(name)
+    local wf = _getFunc("writefile")
+    if not wf then return false, "Executor doesn't support writefile" end
+    local data = {}
+    for _, f in ipairs(MovementRecorder.Frames) do
+        table.insert(data, {t=f.t, cf={f.cf:GetComponents()}, jump=f.jump})
+    end
+    local ok, err = pcall(function()
+        wf("Phaze_Movement_"..name..".json", HttpService:JSONEncode(data))
+    end)
+    return ok, err
+end
+local function LoadMovementRecordingFromFile(name)
+    local rf = _getFunc("readfile")
+    local isfile = _getFunc("isfile")
+    if not rf then return false, "Executor doesn't support readfile" end
+    if isfile and not isfile("Phaze_Movement_"..name..".json") then return false, "File not found" end
+    local ok, result = pcall(function()
+        local raw = rf("Phaze_Movement_"..name..".json")
+        local data = HttpService:JSONDecode(raw)
+        local frames = {}
+        for _, f in ipairs(data) do
+            table.insert(frames, {t=f.t, cf=CFrame.new(unpack(f.cf)), jump=f.jump})
+        end
+        return frames
+    end)
+    if ok then MovementRecorder.Frames = result end
+    return ok, result
+end
 local function SetKillAura(e) if KillAuraConnection then KillAuraConnection:Disconnect(); KillAuraConnection=nil end; if e then KillAuraConnection=RunService.Heartbeat:Connect(function() if KillAura.Enabled then local c=LocalPlayer.Character; if not c then return end; local np=GetNearestPlayer(); if np and np.Character then local tr=GetRootPart(np.Character); if tr then local tl=c:FindFirstChildOfClass("Tool"); if tl then tl:Activate() end; local rp=GetRootPart(c); if rp then rp.CFrame=CFrame.new(rp.Position,tr.Position) end end end; task.wait(KillAura.Delay) end end) end end
 local GodModeHealthConn = nil
 local GodModeHeartbeat = nil
@@ -2162,7 +2272,7 @@ local ITEM_ESP_PATTERNS = {
     {pattern="gold", color=Color3.fromRGB(255,215,0), label="GOLD"},
     {pattern="secret", color=Color3.fromRGB(200,80,255), label="SECRET"},
 }
-local ITEM_ESP_EXCLUDE = {"keycap", "floor", "platform", "tile", "wall", "ceiling", "stage"}
+local ITEM_ESP_EXCLUDE = {"keycap", "floor", "platform", "tile", "wall", "ceiling", "stage", "treadmill", "billboard"}
 local function _classifyItemName(name)
     local n = name:lower()
     for _, ex in ipairs(ITEM_ESP_EXCLUDE) do
@@ -2275,7 +2385,9 @@ _G._Funcs = {
     SetFreecamCornerThickness=function(v) FreecamCornerThickness=v end,
     SetLemonFarm=SetLemonFarm, LemonFarm=LemonFarm, GetMyTycoon=GetMyTycoon, LemonRunRemotes=_lemonRunRemotes,
     SetTreadmillFarm=SetTreadmillFarm, TreadmillFarm=TreadmillFarm,
-    SetItemESP=SetItemESP
+    SetItemESP=SetItemESP,
+    SetMovementRecord=SetMovementRecord, SetMovementPlay=SetMovementPlay, MovementRecorder=MovementRecorder,
+    SaveMovementRecordingToFile=SaveMovementRecordingToFile, LoadMovementRecordingFromFile=LoadMovementRecordingFromFile
 }
 end)()
 
@@ -2945,6 +3057,45 @@ PL:AddSlider("Corner Build Min Thickness",1,10,2,1,"studs",function(v) _G._Funcs
 PL:AddButton("Clear My Freecam Platforms",function() _G._Funcs.ClearFreecamBlocks(); Notify("Freecam","Platforms cleared",2) end)
 PL:AddButton("Freecam Build Modes Info",function()
     Notify("Freecam","←→ cycles: Teleport / Build (single platform) / Corner Build (click 2 corners to build a custom-sized block between them, any shape — floor, wall, or pillar). Backspace cancels a pending Corner A.",8)
+end)
+
+PL:AddSection("Movement Recorder")
+local _movStatusLabel = nil
+PL:AddCustom(function(parent)
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(1,0,0,24)
+    lbl.BackgroundTransparency = 1
+    lbl.Font = Enum.Font.Gotham
+    lbl.TextSize = 12
+    lbl.TextColor3 = Color3.fromRGB(200,200,208)
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Text = "Idle"
+    lbl.Parent = parent
+    _movStatusLabel = lbl
+    task.spawn(function()
+        while parent.Parent do
+            pcall(function() lbl.Text = _G._Funcs.MovementRecorder.Status end)
+            task.wait(0.3)
+        end
+    end)
+end)
+PL:AddToggle("Record Movement",false,function(v) _G._Funcs.SetMovementRecord(v) end)
+PL:AddToggle("Play Recording",false,function(v) _G._Funcs.SetMovementPlay(v) end)
+PL:AddToggle("Loop Playback",false,function(v) _G._Funcs.MovementRecorder.LoopPlayback = v end)
+local _movFileName = "default"
+PL:AddInput("Recording Name","e.g. run1",function(text) if text ~= "" then _movFileName = text end end)
+PL:AddButton("Save Recording To File",function()
+    local ok, err = _G._Funcs.SaveMovementRecordingToFile(_movFileName)
+    if ok then Notify("Movement Recorder","Saved as '"..._movFileName.."'",3)
+    else NotifyError("Movement Recorder","Save failed: "..tostring(err),4) end
+end)
+PL:AddButton("Load Recording From File",function()
+    local ok, err = _G._Funcs.LoadMovementRecordingFromFile(_movFileName)
+    if ok then Notify("Movement Recorder","Loaded '"..._movFileName.."' ("..#_G._Funcs.MovementRecorder.Frames.." frames)",3)
+    else NotifyError("Movement Recorder","Load failed: "..tostring(err),4) end
+end)
+PL:AddButton("Info: Movement Recorder",function()
+    Notify("Movement Recorder","Records your character's exact position every frame while you move. Playback replays it via CFrame - fine for casual/singleplayer games, but heavily-monitored games (anti-cheat, competitive) may flag instant/robotic position changes just like any scripted teleport. Save/Load needs an executor with writefile/readfile support.",8)
 end)
 
 end
@@ -4581,6 +4732,8 @@ local function UnloadPhaze()
     _G._Funcs.SetCustomSpeed(false); _G._Funcs.SetNoClip(false); _G._Funcs.SetInfiniteJump(false); _G._Funcs.SetAntiFall(false); _G._Funcs.SetClickTeleport(false)
     _G._Funcs.SetCustomScale(false); _G._Funcs.SetRandomRagdoll(false); _G._Funcs.StopFESound()
     _G._Funcs.SetFreecam(false); _G._Funcs.ClearFreecamBlocks(); _G._Funcs.SetLemonFarm(false); _G._Funcs.SetTreadmillFarm(false); if _G._Funcs.SetItemESP then _G._Funcs.SetItemESP(false) end
+    if _G._Funcs.SetMovementRecord then _G._Funcs.SetMovementRecord(false) end
+    if _G._Funcs.SetMovementPlay then _G._Funcs.SetMovementPlay(false) end
     for p,_ in pairs(ESPObjects) do RemoveESP(p) end
     if _espConn then _espConn:Disconnect() end; if AimbotConnection then AimbotConnection:Disconnect() end; if FOVCircle then pcall(function() FOVCircle:Remove() end) end; if HitboxConnection then HitboxConnection:Disconnect() end; if ChatSpamConnection then ChatSpamConnection:Disconnect() end; if RemoteSpamConnection then RemoteSpamConnection:Disconnect() end; if ToolSpamConnection then ToolSpamConnection:Disconnect() end; if NoclipConnection then NoclipConnection:Disconnect() end; if FlyConnection then FlyConnection:Disconnect() end; if FlyBodyVelocity then FlyBodyVelocity:Destroy() end; if FlyBodyGyro then FlyBodyGyro:Destroy() end; if KillAuraConnection then KillAuraConnection:Disconnect() end; if GodModeConnection then GodModeConnection:Disconnect() end; if GodModeHealthConn then GodModeHealthConn:Disconnect() end; if BringLoopConnection then BringLoopConnection:Disconnect() end; if AntiRubberbandConn then AntiRubberbandConn:Disconnect() end
     SetAntiDetect(false); SetAutoRescan(false); AntiCheatBypass.HideFromAdmins=false; SetupHideFromAdmins()
