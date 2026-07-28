@@ -1601,6 +1601,9 @@ local FreecamSavedMouseBehavior = nil
 local FreecamPos = nil
 local FreecamClickConn = nil
 local FreecamArrowConn = nil
+local FreecamRMBConn = nil
+local FreecamRMBUpConn = nil
+local FreecamRMBDown = false
 local FreecamHint = nil
 local FreecamHintLabel = nil
 local FreecamMode = "Teleport"
@@ -1611,15 +1614,16 @@ local FreecamPlacedParts = {}
 local FreecamCornerA = nil
 local FreecamCornerMarker = nil
 local function _freecamHintText()
+    local holdRmb = "Hold Right-Click: Look Around  |  "
     if FreecamMode == "Build" then
-        return "Left-Click: Place Platform  |  ←→: Switch Mode (Build)"
+        return holdRmb.."Left-Click: Place Platform  |  ←→: Switch Mode (Build)"
     elseif FreecamMode == "CornerBuild" then
         if FreecamCornerA then
-            return "Left-Click: Set Corner B  |  Backspace: Cancel  |  ←→: Switch Mode (Corner Build)"
+            return holdRmb.."Left-Click: Set Corner B  |  Backspace: Cancel  |  ←→: Switch Mode (Corner Build)"
         end
-        return "Left-Click: Set Corner A  |  ←→: Switch Mode (Corner Build)"
+        return holdRmb.."Left-Click: Set Corner A  |  ←→: Switch Mode (Corner Build)"
     end
-    return "Left-Click: Teleport Here  |  ←→: Switch Mode (Teleport)"
+    return holdRmb.."Left-Click: Teleport Here  |  ←→: Switch Mode (Teleport)"
 end
 local function _ensureFreecamHint()
     if FreecamHint then return end
@@ -1708,6 +1712,9 @@ local function SetFreecam(e)
     if FreecamMouseConn then FreecamMouseConn:Disconnect(); FreecamMouseConn = nil end
     if FreecamClickConn then FreecamClickConn:Disconnect(); FreecamClickConn = nil end
     if FreecamArrowConn then FreecamArrowConn:Disconnect(); FreecamArrowConn = nil end
+    if FreecamRMBConn then FreecamRMBConn:Disconnect(); FreecamRMBConn = nil end
+    if FreecamRMBUpConn then FreecamRMBUpConn:Disconnect(); FreecamRMBUpConn = nil end
+    FreecamRMBDown = false
     FreecamActive = e
     if not e then FreecamCornerA = nil; _setFreecamCornerMarker(nil) end
     _ensureFreecamHint()
@@ -1730,14 +1737,28 @@ local function SetFreecam(e)
         FreecamState.Yaw = math.deg(ry)
 
         FreecamSavedMouseBehavior = UserInputService.MouseBehavior
-        pcall(function() UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter end)
+        pcall(function() UserInputService.MouseBehavior = Enum.MouseBehavior.Default end)
 
         FreecamMouseConn = UserInputService.InputChanged:Connect(function(inp)
-            if not FreecamActive then return end
+            if not FreecamActive or not FreecamRMBDown then return end
             if inp.UserInputType == Enum.UserInputType.MouseMovement then
                 local sens = 0.2
                 FreecamState.Yaw = FreecamState.Yaw - inp.Delta.X * sens
                 FreecamState.Pitch = math.clamp(FreecamState.Pitch - inp.Delta.Y * sens, -89, 89)
+            end
+        end)
+
+        FreecamRMBConn = UserInputService.InputBegan:Connect(function(inp, gpe)
+            if not FreecamActive or gpe then return end
+            if inp.UserInputType == Enum.UserInputType.MouseButton2 then
+                FreecamRMBDown = true
+                pcall(function() UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter end)
+            end
+        end)
+        FreecamRMBUpConn = UserInputService.InputEnded:Connect(function(inp)
+            if inp.UserInputType == Enum.UserInputType.MouseButton2 then
+                FreecamRMBDown = false
+                if FreecamActive then pcall(function() UserInputService.MouseBehavior = Enum.MouseBehavior.Default end) end
             end
         end)
 
