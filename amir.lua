@@ -1468,18 +1468,19 @@ local function SetMovementPlay(e)
             local startTime = os.clock()
             local frames = MovementRecorder.Frames
             local i = 1
+            local wasJumping = false
             while MovementRecorder.Playing and i <= #frames do
                 local c = LocalPlayer.Character
                 local rp = c and GetRootPart(c)
                 if not rp then break end
-                local target = frames[i]
                 local now = os.clock() - startTime
                 while i <= #frames and frames[i].t <= now do
                     pcall(function() rp.CFrame = frames[i].cf end)
-                    if frames[i].jump then
+                    if frames[i].jump and not wasJumping then
                         local hum = c:FindFirstChildOfClass("Humanoid")
                         if hum then pcall(function() hum.Jump = true end) end
                     end
+                    wasJumping = frames[i].jump
                     i = i + 1
                 end
                 MovementRecorder.Status = "Playing... ("..i.."/"..#frames..")"
@@ -2268,18 +2269,21 @@ local ItemESPObjects = {}
 local ItemESPEnabled = false
 local ItemESPConn = nil
 local ItemESPScanConn = nil
-local ITEM_ESP_PATTERNS = {
-    {pattern="gold", color=Color3.fromRGB(255,215,0), label="GOLD"},
-    {pattern="secret", color=Color3.fromRGB(200,80,255), label="SECRET"},
-}
-local ITEM_ESP_EXCLUDE = {"keycap", "floor", "platform", "tile", "wall", "ceiling", "stage", "treadmill", "billboard"}
+local ITEM_ESP_DEFAULT = {color=Color3.fromRGB(80,220,255), label="ITEM"}
 local function _classifyItemName(name)
     local n = name:lower()
-    for _, ex in ipairs(ITEM_ESP_EXCLUDE) do
-        if n:find(ex) then return nil end
-    end
-    for _, p in ipairs(ITEM_ESP_PATTERNS) do
-        if n:find(p.pattern) then return p end
+    if n:find("gold") then return {color=Color3.fromRGB(255,215,0), label="GOLD KEY"} end
+    if n:find("secret") then return {color=Color3.fromRGB(200,80,255), label="SECRET KEY"} end
+    return ITEM_ESP_DEFAULT
+end
+local function _findSpecialKeysFolder()
+    for _, inst in pairs(Workspace:GetChildren()) do
+        if inst:IsA("Folder") or inst:IsA("Model") then
+            local n = inst.Name:lower()
+            if n:find("special") and n:find("key") then
+                return inst
+            end
+        end
     end
     return nil
 end
@@ -2320,15 +2324,18 @@ local function _removeItemESP(inst)
     ItemESPObjects[inst] = nil
 end
 local function _scanForItems()
+    local folder = _findSpecialKeysFolder()
+    if not folder then return 0 end
     local yieldCounter = 0
-    for _, obj in pairs(Workspace:GetDescendants()) do
+    for _, obj in pairs(folder:GetDescendants()) do
         if (obj:IsA("BasePart") or obj:IsA("Model")) and not ItemESPObjects[obj] then
             local info = _classifyItemName(obj.Name)
-            if info then _createItemESP(obj, info) end
+            _createItemESP(obj, info)
         end
         yieldCounter = yieldCounter + 1
         if yieldCounter % 150 == 0 then task.wait() end
     end
+    return 1
 end
 local function SetItemESP(e)
     if e and game.GameId ~= KEYBOARD_UNIVERSE_ID then
@@ -2342,12 +2349,20 @@ local function SetItemESP(e)
         for inst in pairs(ItemESPObjects) do _removeItemESP(inst) end
         return
     end
+    local folder = _findSpecialKeysFolder()
+    if not folder then
+        NotifyError("Item ESP","No 'Special Keys' folder found in Workspace right now",4)
+        ItemESPEnabled = false
+        return
+    end
     _scanForItems()
     ItemESPConn = Workspace.DescendantAdded:Connect(function(obj)
         if not ItemESPEnabled then return end
         if not (obj:IsA("BasePart") or obj:IsA("Model")) then return end
+        local f = _findSpecialKeysFolder()
+        if not f or not obj:IsDescendantOf(f) then return end
         local info = _classifyItemName(obj.Name)
-        if info then _createItemESP(obj, info) end
+        _createItemESP(obj, info)
     end)
     ItemESPScanConn = task.spawn(function()
         while ItemESPEnabled do
@@ -2362,7 +2377,38 @@ local function SetItemESP(e)
     end)
     local n = 0
     for _ in pairs(ItemESPObjects) do n = n + 1 end
-    Notify("Item ESP","Scanning for Key/Gold/Secret items ("..n.." found so far, updates every 5s)",4)
+    Notify("Item ESP","ESP'ing everything in '"..folder.Name.."' ("..n.." found so far, updates every 5s)",4)
+end
+local function _findNearestSpecialKey()
+    local folder = _findSpecialKeysFolder()
+    if not folder then return nil, nil end
+    local c = LocalPlayer.Character
+    local rp = c and GetRootPart(c)
+    local myPos = rp and rp.Position
+    local best, bestDist = nil, math.huge
+    for _, obj in pairs(folder:GetDescendants()) do
+        if obj:IsA("BasePart") or obj:IsA("Model") then
+            local target = obj:IsA("Model") and (obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart", true)) or obj
+            if target then
+                local dist = myPos and (target.Position - myPos).Magnitude or 0
+                if dist < bestDist then bestDist = dist; best = target end
+            end
+        end
+    end
+    return best, bestDist
+end
+local function TeleportToNearestSpecialKey()
+    if game.GameId ~= KEYBOARD_UNIVERSE_ID then
+        NotifyError("Item ESP","This only works in 1 Speed Keyboard Escape",3)
+        return
+    end
+    local target, dist = _findNearestSpecialKey()
+    if not target then
+        NotifyError("Item ESP","No items found in the Special Keys folder right now",4)
+        return
+    end
+    TeleportTo(target.CFrame + Vector3.new(0,3,0))
+    Notify("Item ESP","Teleported to "..target.Name.." ("..math.floor(dist).." studs away)",4)
 end
 
 _G._Funcs = {
@@ -2385,7 +2431,7 @@ _G._Funcs = {
     SetFreecamCornerThickness=function(v) FreecamCornerThickness=v end,
     SetLemonFarm=SetLemonFarm, LemonFarm=LemonFarm, GetMyTycoon=GetMyTycoon, LemonRunRemotes=_lemonRunRemotes,
     SetTreadmillFarm=SetTreadmillFarm, TreadmillFarm=TreadmillFarm,
-    SetItemESP=SetItemESP,
+    SetItemESP=SetItemESP, TeleportToNearestSpecialKey=TeleportToNearestSpecialKey,
     SetMovementRecord=SetMovementRecord, SetMovementPlay=SetMovementPlay, MovementRecorder=MovementRecorder,
     SaveMovementRecordingToFile=SaveMovementRecordingToFile, LoadMovementRecordingFromFile=LoadMovementRecordingFromFile
 }
@@ -3095,7 +3141,7 @@ PL:AddButton("Load Recording From File",function()
     else NotifyError("Movement Recorder","Load failed: "..tostring(err),4) end
 end)
 PL:AddButton("Info: Movement Recorder",function()
-    Notify("Movement Recorder","Records your character's exact position every frame while you move. Playback replays it via CFrame - fine for casual/singleplayer games, but heavily-monitored games (anti-cheat, competitive) may flag instant/robotic position changes just like any scripted teleport. Save/Load needs an executor with writefile/readfile support.",8)
+    Notify("Movement Recorder","Records your character's exact position every frame while you move. Playback replays it via CFrame at the exact recorded timing - smooth and accurate, but it's a direct position set rather than real WASD-driven movement, so it won't add to movement/speed stats and heavily-monitored games may flag it like any scripted teleport. Save/Load needs an executor with writefile/readfile support.",9)
 end)
 
 end
@@ -4501,10 +4547,11 @@ end)
 SF:AddToggle("Enable Auto-Walk on Treadmill",false,function(v) _G._Funcs.SetTreadmillFarm(v) end)
 
 SF:AddSection("Item ESP")
-SF:AddToggle("Enable Gold/Secret ESP",false,function(v) _G._Funcs.SetItemESP(v) end)
+SF:AddToggle("Enable Special Key ESP",false,function(v) _G._Funcs.SetItemESP(v) end)
 SF:AddButton("Info: Item ESP",function()
-    Notify("Item ESP","Highlights parts/models named with 'gold' or 'secret' (color-coded), skipping generic floor/wall/keycap/tile pieces. Rescans every 5s. If the real item's name doesn't match, tell me its exact name and I'll target it directly.",7)
+    Notify("Item ESP","Highlights the real SpecialKey_Secret / SpecialKey_Gold items only (exact name match), color-coded, with a name tag. Rescans every 5s to catch newly-spawned ones. If another special item shows up with a different name, tell me its exact name and I'll add it.",7)
 end)
+SF:AddButton("Teleport To Nearest Special Key",function() _G._Funcs.TeleportToNearestSpecialKey() end)
 
 SF:AddSection("Wins Farm")
 SF:AddButton("AddWin is server->client only (confirmed not exploitable)",function()
