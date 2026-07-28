@@ -2577,6 +2577,9 @@ ToggleRegistry = {}
 ToggleStates = {}
 SliderStates = {}
 DropdownStates = {}
+KeybindStates = {}
+KeybindRegistry = {}
+KeybindActions = {}
 local function ClearContent() for _,ch in pairs(TabContent:GetChildren()) do if ch:IsA("Frame") or ch:IsA("TextButton") then ch:Destroy() end end end
 function RenderCategory(catName)
     if ActiveCat==catName then return end; ActiveCat=catName; ClearContent()
@@ -2731,6 +2734,39 @@ function AddCategory(catName,order)
             box.Focused:Connect(function() TweenService:Create(boxStroke,TweenInfo.new(0.15),{Color=ACCENT}):Play() end)
             box.FocusLost:Connect(function() TweenService:Create(boxStroke,TweenInfo.new(0.15),{Color=DIVIDER_COL}):Play(); if callback then callback(box.Text) end end)
         end})
+    end
+
+    function api:AddKeybind(label,defaultKey,callback)
+        local bindKey = catName..":"..label
+        if KeybindStates[bindKey] == nil then KeybindStates[bindKey] = defaultKey or "None" end
+        table.insert(CatPages[catName],{Build=function(parent,idx)
+            local row=Instance.new("Frame"); row.Size=UDim2.new(1,0,0,32); row.BackgroundColor3=BG_ROW; row.BackgroundTransparency=0.4; row.BorderSizePixel=0; row.LayoutOrder=idx; row.Parent=parent
+            Instance.new("UICorner",row).CornerRadius=UDim.new(0,4)
+            local lbl=Instance.new("TextLabel",row); lbl.Size=UDim2.new(1,-100,1,0); lbl.Position=UDim2.new(0,14,0,0); lbl.BackgroundTransparency=1; lbl.Text=label; lbl.Font=FONT_MED; lbl.TextSize=12; lbl.TextColor3=TEXT_WHITE; lbl.TextXAlignment=Enum.TextXAlignment.Left
+            local keyBtn=Instance.new("TextButton",row); keyBtn.Size=UDim2.new(0,72,0,22); keyBtn.Position=UDim2.new(1,-84,0.5,-11); keyBtn.BackgroundColor3=BG_INPUT; keyBtn.BorderSizePixel=0; keyBtn.Text=KeybindStates[bindKey]; keyBtn.Font=FONT_BOLD; keyBtn.TextSize=11; keyBtn.TextColor3=ACCENT_GLOW; Instance.new("UICorner",keyBtn).CornerRadius=UDim.new(0,5)
+            local keyStroke=Instance.new("UIStroke",keyBtn); keyStroke.Color=DIVIDER_COL; keyStroke.Thickness=1; keyStroke.Transparency=0.3
+            local div=Instance.new("Frame",row); div.Size=UDim2.new(1,-16,0,1); div.Position=UDim2.new(0,8,1,-1); div.BackgroundColor3=DIVIDER_COL; div.BackgroundTransparency=0.6; div.BorderSizePixel=0
+            local listening=false
+            keyBtn.MouseButton1Click:Connect(function()
+                if listening then return end
+                listening=true
+                keyBtn.Text="..."
+                TweenService:Create(keyStroke,TweenInfo.new(0.15),{Color=ACCENT}):Play()
+                local conn
+                conn = UserInputService.InputBegan:Connect(function(inp,gpe)
+                    if inp.UserInputType ~= Enum.UserInputType.Keyboard then return end
+                    listening=false
+                    conn:Disconnect()
+                    local name = inp.KeyCode.Name
+                    if inp.KeyCode == Enum.KeyCode.Backspace then name = "None" end
+                    KeybindStates[bindKey] = name
+                    keyBtn.Text = name
+                    TweenService:Create(keyStroke,TweenInfo.new(0.15),{Color=DIVIDER_COL}):Play()
+                end)
+            end)
+            KeybindRegistry[bindKey] = {SetKey=function(name) KeybindStates[bindKey]=name; keyBtn.Text=name end}
+        end})
+        table.insert(KeybindActions,{bindKey=bindKey,action=callback})
     end
 
     function api:AddCustom(buildFn)
@@ -3086,7 +3122,17 @@ end
 
 do local PL=AddCategory("Player",5)
 PL:AddToggle("NoClip [N]",false,function(v) NoClip.Enabled=v; _G._Funcs.SetNoClip(v) end)
+PL:AddKeybind("NoClip Keybind","N",function()
+    NoClip.Enabled = not NoClip.Enabled; _G._Funcs.SetNoClip(NoClip.Enabled)
+    ToggleStates["Player:NoClip [N]"] = NoClip.Enabled
+    local reg = ToggleRegistry["Player:NoClip [N]"]; if reg then reg.SetVisual(NoClip.Enabled) end
+end)
 PL:AddToggle("Fly [F]",false,function(v) Fly.Enabled=v; _G._Funcs.SetFly(v) end)
+PL:AddKeybind("Fly Keybind","F",function()
+    Fly.Enabled = not Fly.Enabled; _G._Funcs.SetFly(Fly.Enabled)
+    ToggleStates["Player:Fly [F]"] = Fly.Enabled
+    local reg = ToggleRegistry["Player:Fly [F]"]; if reg then reg.SetVisual(Fly.Enabled) end
+end)
 PL:AddSlider("Fly Speed",10,900,50,5,"",function(v) Fly.Speed=v end)
 PL:AddSection("Custom Speed")
 PL:AddToggle("Custom Speed",false,function(v) _G._Funcs.SetCustomSpeed(v) end)
@@ -3097,6 +3143,12 @@ PL:AddToggle("Anti-Fall (Void Save)",false,function(v) _G._Funcs.SetAntiFall(v) 
 PL:AddToggle("Fullbright",false,function(v) _G._Funcs.Fullbright.Enabled=v; _G._Funcs.SetFullbright(v) end)
 PL:AddSection("Freecam")
 PL:AddToggle("Freecam",false,function(v) _G._Funcs.SetFreecam(v) end)
+PL:AddKeybind("Freecam Keybind","None",function()
+    local newState = not (ToggleStates["Player:Freecam"] or false)
+    _G._Funcs.SetFreecam(newState)
+    ToggleStates["Player:Freecam"] = newState
+    local reg = ToggleRegistry["Player:Freecam"]; if reg then reg.SetVisual(newState) end
+end)
 PL:AddSlider("Freecam Speed",10,500,50,10,"",function(v) _G._Funcs.FreecamState.Speed=v end)
 PL:AddSlider("Build Platform Size",4,40,12,2,"studs",function(v) _G._Funcs.SetFreecamBlockSize(v) end)
 PL:AddSlider("Corner Build Min Thickness",1,10,2,1,"studs",function(v) _G._Funcs.SetFreecamCornerThickness(v) end)
@@ -4801,20 +4853,17 @@ RenderCategory("Anti-Cheat")
 
 UserInputService.InputBegan:Connect(function(inp,gpe)
     if gpe then return end
-    if inp.KeyCode==Enum.KeyCode.N then
-        NoClip.Enabled=not NoClip.Enabled; _G._Funcs.SetNoClip(NoClip.Enabled)
-        ToggleStates["Player:NoClip [N]"] = NoClip.Enabled
-        local reg = ToggleRegistry["Player:NoClip [N]"]
-        if reg then reg.SetVisual(NoClip.Enabled) end
-    end
-    if inp.KeyCode==Enum.KeyCode.F then
-        Fly.Enabled=not Fly.Enabled; _G._Funcs.SetFly(Fly.Enabled)
-        ToggleStates["Player:Fly [F]"] = Fly.Enabled
-        local reg = ToggleRegistry["Player:Fly [F]"]
-        if reg then reg.SetVisual(Fly.Enabled) end
-    end
     if inp.KeyCode==Enum.KeyCode.RightShift then
         ScreenGui.Enabled = not ScreenGui.Enabled
+        return
+    end
+    if inp.UserInputType == Enum.UserInputType.Keyboard then
+        for _, kb in ipairs(KeybindActions) do
+            local keyName = KeybindStates[kb.bindKey]
+            if keyName and keyName ~= "None" and inp.KeyCode.Name == keyName then
+                pcall(kb.action)
+            end
+        end
     end
 end)
 
