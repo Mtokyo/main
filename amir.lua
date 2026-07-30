@@ -2602,14 +2602,21 @@ Notify = function(title,content,dur,isError)
     local n=Instance.new("Frame"); n.Size=UDim2.new(1,0,0,0); n.AutomaticSize=Enum.AutomaticSize.Y; n.BackgroundColor3=Color3.fromRGB(11,11,12); n.BorderSizePixel=0; n.BackgroundTransparency=1; n.ClipsDescendants=true; n.Parent=NotifHolder
     Instance.new("UICorner",n).CornerRadius=UDim.new(0,8)
     local stroke=Instance.new("UIStroke",n); stroke.Color=isError and Color3.fromRGB(90,40,40) or Color3.fromRGB(50,50,54); stroke.Thickness=1; stroke.Transparency=0.35
-    local pad=Instance.new("UIPadding",n); pad.PaddingTop=UDim.new(0,7); pad.PaddingBottom=UDim.new(0,9); pad.PaddingLeft=UDim.new(0,9); pad.PaddingRight=UDim.new(0,9)
-    local tl=Instance.new("TextLabel",n); tl.Size=UDim2.new(1,0,0,12); tl.BackgroundTransparency=1; tl.Text=(isError and "! " or "")..string.upper(title); tl.Font=FONT_BOLD; tl.TextSize=9; tl.TextColor3=titleCol; tl.TextXAlignment=Enum.TextXAlignment.Left
-    local cl=Instance.new("TextLabel",n); cl.Size=UDim2.new(1,0,0,0); cl.AutomaticSize=Enum.AutomaticSize.Y; cl.Position=UDim2.new(0,0,0,13); cl.BackgroundTransparency=1; cl.Text=content; cl.Font=FONT; cl.TextSize=10; cl.TextColor3=TEXT_DIM; cl.TextXAlignment=Enum.TextXAlignment.Left; cl.TextWrapped=true
+    local accentBar=Instance.new("Frame",n); accentBar.Size=UDim2.new(0,3,1,0); accentBar.BackgroundColor3=accentCol; accentBar.BorderSizePixel=0
+    local inner=Instance.new("Frame",n); inner.Size=UDim2.new(1,0,0,0); inner.AutomaticSize=Enum.AutomaticSize.Y; inner.BackgroundTransparency=1; inner.Position=UDim2.new(0,26,0,0)
+    local pad=Instance.new("UIPadding",inner); pad.PaddingTop=UDim.new(0,7); pad.PaddingBottom=UDim.new(0,9); pad.PaddingLeft=UDim.new(0,9); pad.PaddingRight=UDim.new(0,9)
+    local tl=Instance.new("TextLabel",inner); tl.Size=UDim2.new(1,0,0,12); tl.BackgroundTransparency=1; tl.Text=(isError and "! " or "")..string.upper(title); tl.Font=FONT_BOLD; tl.TextSize=9; tl.TextColor3=titleCol; tl.TextXAlignment=Enum.TextXAlignment.Left
+    local cl=Instance.new("TextLabel",inner); cl.Size=UDim2.new(1,0,0,0); cl.AutomaticSize=Enum.AutomaticSize.Y; cl.Position=UDim2.new(0,0,0,13); cl.BackgroundTransparency=1; cl.Text=content; cl.Font=FONT; cl.TextSize=10; cl.TextColor3=TEXT_DIM; cl.TextXAlignment=Enum.TextXAlignment.Left; cl.TextWrapped=true
     local timerBg=Instance.new("Frame",n); timerBg.Size=UDim2.new(1,4,0,2); timerBg.Position=UDim2.new(0,-2,1,4); timerBg.BackgroundColor3=Color3.fromRGB(26,26,28); timerBg.BorderSizePixel=0
     local timerFill=Instance.new("Frame",timerBg); timerFill.Size=UDim2.new(1,0,1,0); timerFill.BackgroundColor3=accentCol; timerFill.BorderSizePixel=0
     TweenService:Create(n,TweenInfo.new(0.35,Enum.EasingStyle.Quint,Enum.EasingDirection.Out),{BackgroundTransparency=0.06}):Play()
+    TweenService:Create(inner,TweenInfo.new(0.3,Enum.EasingStyle.Back,Enum.EasingDirection.Out),{Position=UDim2.new(0,0,0,0)}):Play()
     TweenService:Create(timerFill,TweenInfo.new(dur,Enum.EasingStyle.Linear),{Size=UDim2.new(0,0,1,0)}):Play()
-    task.delay(dur,function() TweenService:Create(n,TweenInfo.new(0.3),{BackgroundTransparency=1}):Play(); task.wait(0.3); n:Destroy() end)
+    task.delay(dur,function()
+        TweenService:Create(n,TweenInfo.new(0.3),{BackgroundTransparency=1}):Play()
+        TweenService:Create(inner,TweenInfo.new(0.3,Enum.EasingStyle.Quad,Enum.EasingDirection.In),{Position=UDim2.new(0,26,0,0)}):Play()
+        task.wait(0.3); n:Destroy()
+    end)
 end
 
 NotifyError = function(title,content,dur)
@@ -2684,7 +2691,8 @@ local ContentHeader=Instance.new("Frame"); ContentHeader.Size=UDim2.new(1,0,0,34
 local ContentTitle=Instance.new("TextLabel",ContentHeader); ContentTitle.Size=UDim2.new(1,-20,1,0); ContentTitle.Position=UDim2.new(0,16,0,0); ContentTitle.BackgroundTransparency=1; ContentTitle.Text=""; ContentTitle.Font=FONT_BOLD; ContentTitle.TextSize=13; ContentTitle.TextColor3=TEXT_BRIGHT; ContentTitle.TextXAlignment=Enum.TextXAlignment.Left
 local ContentHeaderLine=Instance.new("Frame",ContentHeader); ContentHeaderLine.Size=UDim2.new(1,-16,0,1); ContentHeaderLine.Position=UDim2.new(0,16,1,-1); ContentHeaderLine.BackgroundColor3=DIVIDER_COL; ContentHeaderLine.BackgroundTransparency=0.3; ContentHeaderLine.BorderSizePixel=0
 
-local TabContent=Instance.new("ScrollingFrame"); TabContent.Name="Content"; TabContent.Size=UDim2.new(1,-8,1,-34); TabContent.Position=UDim2.new(0,8,0,34); TabContent.BackgroundTransparency=1; TabContent.BorderSizePixel=0; TabContent.ScrollBarThickness=2; TabContent.ScrollBarImageColor3=Color3.fromRGB(60,60,64); TabContent.CanvasSize=UDim2.new(0,0,0,0); TabContent.AutomaticCanvasSize=Enum.AutomaticSize.Y; TabContent.Parent=ContentArea
+local ContentFadeGroup=Instance.new("CanvasGroup"); ContentFadeGroup.Name="ContentFadeGroup"; ContentFadeGroup.Size=UDim2.new(1,0,1,0); ContentFadeGroup.BackgroundTransparency=1; ContentFadeGroup.BorderSizePixel=0; ContentFadeGroup.GroupTransparency=0; ContentFadeGroup.Parent=ContentArea
+local TabContent=Instance.new("ScrollingFrame"); TabContent.Name="Content"; TabContent.Size=UDim2.new(1,-8,1,-34); TabContent.Position=UDim2.new(0,8,0,34); TabContent.BackgroundTransparency=1; TabContent.BorderSizePixel=0; TabContent.ScrollBarThickness=2; TabContent.ScrollBarImageColor3=Color3.fromRGB(60,60,64); TabContent.CanvasSize=UDim2.new(0,0,0,0); TabContent.AutomaticCanvasSize=Enum.AutomaticSize.Y; TabContent.Parent=ContentFadeGroup
 local ContentLayout=Instance.new("UIListLayout",TabContent); ContentLayout.SortOrder=Enum.SortOrder.LayoutOrder; ContentLayout.Padding=UDim.new(0,6)
 Instance.new("UIPadding",TabContent).PaddingTop=UDim.new(0,8); TabContent.UIPadding.PaddingBottom=UDim.new(0,12)
 
@@ -2801,8 +2809,10 @@ function RenderCategory(catName)
             if ind then TweenService:Create(ind,TweenInfo.new(0.15),{Size=UDim2.new(0,2,0,0),BackgroundTransparency=1}):Play() end
         end
     end
+    ContentFadeGroup.GroupTransparency=1
     for i,item in ipairs(CatPages[catName] or {}) do item.Build(TabContent,i) end
     TabContent.CanvasPosition=Vector2.new(0,0)
+    TweenService:Create(ContentFadeGroup,TweenInfo.new(0.2,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),{GroupTransparency=0}):Play()
 end
 
 function AddCategory(catName,order)
@@ -4498,6 +4508,56 @@ RE:AddButton("TEST HOOK (self-test)", function()
     end)
     _spyFilter = prevFilter
 end)
+
+RE:AddSection("Map Dumper")
+local function _dumpBuildTree(inst, depth, lines, yieldState)
+    yieldState.n = yieldState.n + 1
+    if yieldState.n % 300 == 0 then task.wait() end
+    local indent = string.rep("  ", depth)
+    local cls, nm = "?", "?"
+    pcall(function() cls = inst.ClassName end)
+    pcall(function() nm = inst.Name end)
+    local extra = ""
+    pcall(function()
+        if inst:IsA("BasePart") then
+            local p, s = inst.Position, inst.Size
+            extra = string.format("  pos=(%.1f,%.1f,%.1f) size=(%.1f,%.1f,%.1f)", p.X, p.Y, p.Z, s.X, s.Y, s.Z)
+        elseif inst:IsA("Model") then
+            local ok2, cf = pcall(function() return inst:GetPivot() end)
+            if ok2 then extra = string.format("  pivot=(%.1f,%.1f,%.1f)", cf.Position.X, cf.Position.Y, cf.Position.Z) end
+        end
+    end)
+    table.insert(lines, indent.."["..cls.."] "..nm..extra)
+    local children = {}
+    pcall(function() children = inst:GetChildren() end)
+    for _, child in ipairs(children) do
+        _dumpBuildTree(child, depth + 1, lines, yieldState)
+    end
+end
+local function DumpMap(root, label)
+    task.spawn(function()
+        Notify("Map Dumper","Scanning "..label.."...",2)
+        local lines = {}
+        local yieldState = {n = 0}
+        pcall(function() _dumpBuildTree(root, 0, lines, yieldState) end)
+        local content = table.concat(lines, "\n")
+        local wf = _getFunc("writefile")
+        local filename = "Phaze_MapDump_"..label.."_"..tostring(game.PlaceId)..".txt"
+        if wf then
+            local ok = pcall(wf, filename, content)
+            if ok then
+                Notify("Map Dumper","Saved "..#lines.." instances to "..filename,4)
+            else
+                Notify("Map Dumper","Failed to write file (executor blocked it?)",3,true)
+            end
+        else
+            print(content)
+            Notify("Map Dumper","No writefile — printed "..#lines.." lines to console instead",4)
+        end
+    end)
+end
+RE:AddButton("Dump Workspace (the map)",function() DumpMap(Workspace,"Workspace") end)
+RE:AddButton("Dump Whole Game (all services)",function() DumpMap(game,"Game") end)
 end
 end
 
