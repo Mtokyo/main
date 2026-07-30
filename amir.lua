@@ -1,4 +1,3 @@
-
 if _G._PhazeLoaded then
     pcall(function() if _G._Funcs and _G._Funcs.Unload then _G._Funcs.Unload() end end)
     pcall(function() if _G._PhazeScreenGui then _G._PhazeScreenGui:Destroy() end end)
@@ -1607,12 +1606,15 @@ local FreecamRMBDown = false
 local FreecamHint = nil
 local FreecamHintLabel = nil
 local FreecamMode = "Teleport"
-local FreecamModes = {"Teleport", "Build", "CornerBuild"}
+local FreecamModes = {"Teleport", "Build", "CornerBuild", "Draw"}
 local FreecamBlockSize = 12
 local FreecamCornerThickness = 2
 local FreecamPlacedParts = {}
 local FreecamCornerA = nil
 local FreecamCornerMarker = nil
+local FreecamDrawPoints = {}
+local FreecamDrawEntries = {}
+local FreecamDrawTip = nil
 local function _freecamHintText()
     local holdRmb = "Hold Right-Click: Look Around  |  "
     if FreecamMode == "Build" then
@@ -1622,6 +1624,8 @@ local function _freecamHintText()
             return holdRmb.."Left-Click: Set Corner B  |  Backspace: Cancel  |  ←→: Switch Mode (Corner Build)"
         end
         return holdRmb.."Left-Click: Set Corner A  |  ←→: Switch Mode (Corner Build)"
+    elseif FreecamMode == "Draw" then
+        return holdRmb.."Left-Click: Add Waypoint  |  Backspace: Undo Last  |  ←→: Switch Mode (Draw)"
     end
     return holdRmb.."Left-Click: Teleport Here  |  ←→: Switch Mode (Teleport)"
 end
@@ -1706,6 +1710,69 @@ local function ClearFreecamBlocks()
     FreecamCornerA = nil
     _setFreecamCornerMarker(nil)
 end
+local function _addFreecamDrawPoint(pos)
+    table.insert(FreecamDrawPoints, pos)
+    local entry = {}
+    pcall(function()
+        local marker = Instance.new("Part")
+        marker.Shape = Enum.PartType.Ball
+        marker.Size = Vector3.new(1.6, 1.6, 1.6)
+        marker.CFrame = CFrame.new(pos)
+        marker.Anchored = true
+        marker.CanCollide = false
+        marker.Material = Enum.Material.Neon
+        marker.Color = Color3.fromRGB(255, 200, 60)
+        marker.Name = "PhazeDrawPoint"
+        marker.Parent = Workspace
+        entry.marker = marker
+    end)
+    if FreecamDrawTip then
+        pcall(function() FreecamDrawTip.Size = Vector3.new(0.8, 0.8, 0.8); FreecamDrawTip.Color = Color3.fromRGB(80, 200, 255) end)
+    end
+    FreecamDrawTip = entry.marker
+    local n = #FreecamDrawPoints
+    if n > 1 then
+        local a, b = FreecamDrawPoints[n-1], FreecamDrawPoints[n]
+        pcall(function()
+            local dist = (b - a).Magnitude
+            local mid = (a + b) / 2
+            local line = Instance.new("Part")
+            line.Size = Vector3.new(0.35, 0.35, dist)
+            line.CFrame = CFrame.lookAt(mid, b)
+            line.Anchored = true
+            line.CanCollide = false
+            line.Material = Enum.Material.Neon
+            line.Color = Color3.fromRGB(80, 200, 255)
+            line.Name = "PhazeDrawLine"
+            line.Parent = Workspace
+            entry.line = line
+        end)
+    end
+    table.insert(FreecamDrawEntries, entry)
+end
+local function _undoFreecamDrawPoint()
+    if #FreecamDrawEntries == 0 then return end
+    local entry = table.remove(FreecamDrawEntries, #FreecamDrawEntries)
+    table.remove(FreecamDrawPoints, #FreecamDrawPoints)
+    pcall(function() if entry.marker then entry.marker:Destroy() end end)
+    pcall(function() if entry.line then entry.line:Destroy() end end)
+    local prev = FreecamDrawEntries[#FreecamDrawEntries]
+    if prev and prev.marker then
+        FreecamDrawTip = prev.marker
+        pcall(function() FreecamDrawTip.Size = Vector3.new(1.6, 1.6, 1.6); FreecamDrawTip.Color = Color3.fromRGB(255, 200, 60) end)
+    else
+        FreecamDrawTip = nil
+    end
+end
+local function ClearFreecamDrawing()
+    for _, entry in pairs(FreecamDrawEntries) do
+        pcall(function() if entry.marker then entry.marker:Destroy() end end)
+        pcall(function() if entry.line then entry.line:Destroy() end end)
+    end
+    FreecamDrawEntries = {}
+    FreecamDrawPoints = {}
+    FreecamDrawTip = nil
+end
 local function SetFreecam(e)
     if FreecamConn then FreecamConn:Disconnect(); FreecamConn = nil end
     if FreecamCharAddedConn then FreecamCharAddedConn:Disconnect(); FreecamCharAddedConn = nil end
@@ -1778,6 +1845,9 @@ local function SetFreecam(e)
                 _setFreecamCornerMarker(nil)
                 if FreecamHintLabel then FreecamHintLabel.Text = _freecamHintText() end
                 Notify("Freecam","Corner A cancelled",1.5)
+            elseif inp.KeyCode == Enum.KeyCode.Backspace and FreecamMode == "Draw" then
+                _undoFreecamDrawPoint()
+                Notify("Freecam","Undid last waypoint ("..#FreecamDrawPoints.." left)",1.5)
             end
         end)
 
@@ -1811,6 +1881,9 @@ local function SetFreecam(e)
                         _setFreecamCornerMarker(nil)
                         if FreecamHintLabel then FreecamHintLabel.Text = _freecamHintText() end
                     end
+                elseif FreecamMode == "Draw" then
+                    _addFreecamDrawPoint(dest)
+                    Notify("Freecam","Waypoint "..#FreecamDrawPoints.." added",1.2)
                 else
                     TeleportTo(CFrame.new(dest + Vector3.new(0,3,0)))
                     Notify("Freecam","Teleported to clicked spot",2)
@@ -2449,6 +2522,7 @@ _G._Funcs = {
     Fullbright=Fullbright, selectedFunction=nil,
     SetFreecam=SetFreecam, FreecamState=FreecamState,
     ClearFreecamBlocks=ClearFreecamBlocks, SetFreecamBlockSize=function(v) FreecamBlockSize=v end,
+    ClearFreecamDrawing=ClearFreecamDrawing,
     SetFreecamCornerThickness=function(v) FreecamCornerThickness=v end,
     SetLemonFarm=SetLemonFarm, LemonFarm=LemonFarm, GetMyTycoon=GetMyTycoon, LemonRunRemotes=_lemonRunRemotes,
     SetTreadmillFarm=SetTreadmillFarm, TreadmillFarm=TreadmillFarm,
@@ -2486,6 +2560,35 @@ pcall(function() ScreenGui.Parent = game:GetService("CoreGui") end)
 if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
 _G._PhazeScreenGui = ScreenGui
 
+local LoadingScreen=Instance.new("Frame"); LoadingScreen.Name="LoadingScreen"; LoadingScreen.Size=UDim2.new(1,0,1,0); LoadingScreen.BackgroundColor3=Color3.fromRGB(8,8,9); LoadingScreen.BackgroundTransparency=0; LoadingScreen.BorderSizePixel=0; LoadingScreen.ZIndex=1000; LoadingScreen.Parent=ScreenGui
+local LoadingGrad=Instance.new("UIGradient",LoadingScreen); LoadingGrad.Color=ColorSequence.new({ColorSequenceKeypoint.new(0,Color3.fromRGB(12,12,14)),ColorSequenceKeypoint.new(1,Color3.fromRGB(6,6,7))}); LoadingGrad.Rotation=90
+
+local LoadAvatarRing=Instance.new("Frame",LoadingScreen); LoadAvatarRing.Size=UDim2.new(0,96,0,96); LoadAvatarRing.AnchorPoint=Vector2.new(0.5,0.5); LoadAvatarRing.Position=UDim2.new(0.5,0,0.5,-70); LoadAvatarRing.BackgroundColor3=Color3.fromRGB(18,18,20); LoadAvatarRing.BorderSizePixel=0; LoadAvatarRing.ZIndex=1001
+Instance.new("UICorner",LoadAvatarRing).CornerRadius=UDim.new(1,0)
+local LoadAvatarStroke=Instance.new("UIStroke",LoadAvatarRing); LoadAvatarStroke.Color=ACCENT; LoadAvatarStroke.Thickness=2; LoadAvatarStroke.Transparency=0.15
+local LoadAvatarImg=Instance.new("ImageLabel",LoadAvatarRing); LoadAvatarImg.Size=UDim2.new(1,-8,1,-8); LoadAvatarImg.AnchorPoint=Vector2.new(0.5,0.5); LoadAvatarImg.Position=UDim2.new(0.5,0,0.5,0); LoadAvatarImg.BackgroundTransparency=1; LoadAvatarImg.Image=""; LoadAvatarImg.ScaleType=Enum.ScaleType.Fit; LoadAvatarImg.ZIndex=1002
+Instance.new("UICorner",LoadAvatarImg).CornerRadius=UDim.new(1,0)
+
+local LoadTitle=Instance.new("TextLabel",LoadingScreen); LoadTitle.Size=UDim2.new(0,300,0,26); LoadTitle.AnchorPoint=Vector2.new(0.5,0.5); LoadTitle.Position=UDim2.new(0.5,0,0.5,-10); LoadTitle.BackgroundTransparency=1; LoadTitle.Text="PHAZE"; LoadTitle.Font=FONT_BOLD; LoadTitle.TextSize=22; LoadTitle.TextColor3=TEXT_BRIGHT; LoadTitle.ZIndex=1001
+local LoadName=Instance.new("TextLabel",LoadingScreen); LoadName.Size=UDim2.new(0,300,0,16); LoadName.AnchorPoint=Vector2.new(0.5,0.5); LoadName.Position=UDim2.new(0.5,0,0.5,14); LoadName.BackgroundTransparency=1; LoadName.Text=LocalPlayer.DisplayName.." (@"..LocalPlayer.Name..")"; LoadName.Font=FONT_MED; LoadName.TextSize=12; LoadName.TextColor3=TEXT_DIM; LoadName.ZIndex=1001
+
+local LoadBarBg=Instance.new("Frame",LoadingScreen); LoadBarBg.Size=UDim2.new(0,220,0,4); LoadBarBg.AnchorPoint=Vector2.new(0.5,0.5); LoadBarBg.Position=UDim2.new(0.5,0,0.5,42); LoadBarBg.BackgroundColor3=Color3.fromRGB(28,28,31); LoadBarBg.BorderSizePixel=0; LoadBarBg.ZIndex=1001
+Instance.new("UICorner",LoadBarBg).CornerRadius=UDim.new(1,0)
+local LoadBarFill=Instance.new("Frame",LoadBarBg); LoadBarFill.Size=UDim2.new(0,0,1,0); LoadBarFill.BackgroundColor3=ACCENT_GLOW; LoadBarFill.BorderSizePixel=0; LoadBarFill.ZIndex=1002
+Instance.new("UICorner",LoadBarFill).CornerRadius=UDim.new(1,0)
+
+local LoadStatus=Instance.new("TextLabel",LoadingScreen); LoadStatus.Size=UDim2.new(0,300,0,14); LoadStatus.AnchorPoint=Vector2.new(0.5,0.5); LoadStatus.Position=UDim2.new(0.5,0,0.5,64); LoadStatus.BackgroundTransparency=1; LoadStatus.Text="Loading..."; LoadStatus.Font=FONT; LoadStatus.TextSize=11; LoadStatus.TextColor3=TEXT_DIM; LoadStatus.ZIndex=1001
+
+TweenService:Create(LoadBarFill,TweenInfo.new(0.6,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),{Size=UDim2.new(0,90,1,0)}):Play()
+
+task.spawn(function()
+    local ok, content = pcall(function()
+        local c, isReady = Players:GetUserThumbnailAsync(LocalPlayer.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size420x420)
+        return c
+    end)
+    if ok and content then LoadAvatarImg.Image = content end
+end)
+
 local NotifHolder = Instance.new("Frame"); NotifHolder.Size=UDim2.new(0,220,1,0); NotifHolder.Position=UDim2.new(1,-230,0,0); NotifHolder.BackgroundTransparency=1; NotifHolder.Parent=ScreenGui
 local NL=Instance.new("UIListLayout",NotifHolder); NL.SortOrder=Enum.SortOrder.LayoutOrder; NL.Padding=UDim.new(0,4); NL.VerticalAlignment=Enum.VerticalAlignment.Top
 Instance.new("UIPadding",NotifHolder).PaddingTop=UDim.new(0,10)
@@ -2515,7 +2618,7 @@ local SIDEBAR_W = 152
 local TOPBAR_H = 44
 local STATUSBAR_H = 24
 
-Panel = Instance.new("Frame"); Panel.Name="Panel"; Panel.Size=UDim2.new(0,560,0,440); Panel.Position=UDim2.new(0.5,-280,0.5,-220); Panel.BackgroundColor3=BG_PANEL; Panel.BackgroundTransparency=0.04; Panel.BorderSizePixel=0; Panel.ClipsDescendants=true; Panel.Parent=ScreenGui
+Panel = Instance.new("Frame"); Panel.Name="Panel"; Panel.Size=UDim2.new(0,560,0,440); Panel.Position=UDim2.new(0.5,-280,0.5,-220); Panel.BackgroundColor3=BG_PANEL; Panel.BackgroundTransparency=0.04; Panel.BorderSizePixel=0; Panel.ClipsDescendants=true; Panel.Parent=ScreenGui; Panel.Visible=false
 Instance.new("UICorner",Panel).CornerRadius=UDim.new(0,14)
 local PS=Instance.new("UIStroke",Panel); PS.Color=Color3.fromRGB(46,46,50); PS.Thickness=1; PS.Transparency=0.25
 local Glow=Instance.new("ImageLabel"); Glow.Size=UDim2.new(1,90,1,90); Glow.Position=UDim2.new(0,-45,0,-45); Glow.BackgroundTransparency=1; Glow.Image="rbxassetid://6014261993"; Glow.ImageColor3=Color3.fromRGB(60,60,64); Glow.ImageTransparency=0.82; Glow.ScaleType=Enum.ScaleType.Slice; Glow.SliceCenter=Rect.new(49,49,450,450); Glow.ZIndex=-1; Glow.Parent=Panel
@@ -2530,7 +2633,7 @@ local LogoLbl=Instance.new("TextLabel",LogoDot); LogoLbl.Size=UDim2.new(1,0,1,0)
 local _logoUrl = "https://github.com/Mtokyo/trigger1/blob/main/phaze-logo-9eKZTHF8.png?raw=true"
 local _getcustomasset = _getFunc("getcustomasset") or _getFunc("getsynasset")
 if _getcustomasset then
-    pcall(function()
+    task.spawn(function() pcall(function()
         local _request = _getFunc("request") or _getFunc("http_request") or _getFunc("syn.request") or (syn and syn.request) or http_request or request
         if _request then
             local resp = _request({Url=_logoUrl, Method="GET"})
@@ -2540,7 +2643,7 @@ if _getcustomasset then
                 if LogoImg.Image ~= "" then LogoLbl.Visible = false end
             end
         end
-    end)
+    end) end)
 end
 
 local BT=Instance.new("TextLabel",TopBar); BT.Size=UDim2.new(0,140,0,16); BT.Position=UDim2.new(0,50,0,10); BT.BackgroundTransparency=1; BT.Text="PHAZE"; BT.Font=FONT_BOLD; BT.TextSize=15; BT.TextColor3=TEXT_BRIGHT; BT.TextXAlignment=Enum.TextXAlignment.Left
@@ -2563,7 +2666,13 @@ local Body=Instance.new("Frame"); Body.Size=UDim2.new(1,0,1,-TOPBAR_H-STATUSBAR_
 
 local Sidebar=Instance.new("Frame"); Sidebar.Name="Sidebar"; Sidebar.Size=UDim2.new(0,SIDEBAR_W,1,0); Sidebar.BackgroundColor3=BG_TAB; Sidebar.BackgroundTransparency=0.1; Sidebar.BorderSizePixel=0; Sidebar.Parent=Body
 local SidebarLine=Instance.new("Frame",Sidebar); SidebarLine.Size=UDim2.new(0,1,1,0); SidebarLine.Position=UDim2.new(1,-1,0,0); SidebarLine.BackgroundColor3=DIVIDER_COL; SidebarLine.BackgroundTransparency=0.2; SidebarLine.BorderSizePixel=0
-local CatScroll=Instance.new("ScrollingFrame",Sidebar); CatScroll.Size=UDim2.new(1,0,1,-6); CatScroll.Position=UDim2.new(0,0,0,6); CatScroll.BackgroundTransparency=1; CatScroll.BorderSizePixel=0; CatScroll.ScrollBarThickness=2; CatScroll.ScrollBarImageColor3=Color3.fromRGB(60,60,64); CatScroll.CanvasSize=UDim2.new(0,0,0,0); CatScroll.AutomaticCanvasSize=Enum.AutomaticSize.Y; CatScroll.ScrollingDirection=Enum.ScrollingDirection.Y
+local SearchBox=Instance.new("TextBox",Sidebar); SearchBox.Size=UDim2.new(1,-16,0,26); SearchBox.Position=UDim2.new(0,8,0,6); SearchBox.BackgroundColor3=BG_INPUT; SearchBox.BorderSizePixel=0; SearchBox.PlaceholderText="Search..."; SearchBox.PlaceholderColor3=Color3.fromRGB(70,70,80); SearchBox.Text=""; SearchBox.Font=FONT; SearchBox.TextSize=11; SearchBox.TextColor3=TEXT_BRIGHT; SearchBox.ClearTextOnFocus=false
+Instance.new("UICorner",SearchBox).CornerRadius=UDim.new(0,6)
+local SearchStroke=Instance.new("UIStroke",SearchBox); SearchStroke.Color=DIVIDER_COL; SearchStroke.Thickness=1; SearchStroke.Transparency=0.3
+Instance.new("UIPadding",SearchBox).PaddingLeft=UDim.new(0,8)
+SearchBox.Focused:Connect(function() TweenService:Create(SearchStroke,TweenInfo.new(0.15),{Color=ACCENT}):Play() end)
+SearchBox.FocusLost:Connect(function() TweenService:Create(SearchStroke,TweenInfo.new(0.15),{Color=DIVIDER_COL}):Play() end)
+local CatScroll=Instance.new("ScrollingFrame",Sidebar); CatScroll.Size=UDim2.new(1,0,1,-38); CatScroll.Position=UDim2.new(0,0,0,38); CatScroll.BackgroundTransparency=1; CatScroll.BorderSizePixel=0; CatScroll.ScrollBarThickness=2; CatScroll.ScrollBarImageColor3=Color3.fromRGB(60,60,64); CatScroll.CanvasSize=UDim2.new(0,0,0,0); CatScroll.AutomaticCanvasSize=Enum.AutomaticSize.Y; CatScroll.ScrollingDirection=Enum.ScrollingDirection.Y
 local CatLayout=Instance.new("UIListLayout",CatScroll); CatLayout.FillDirection=Enum.FillDirection.Vertical; CatLayout.SortOrder=Enum.SortOrder.LayoutOrder; CatLayout.Padding=UDim.new(0,3)
 Instance.new("UIPadding",CatScroll).PaddingLeft=UDim.new(0,8); CatScroll.UIPadding.PaddingRight=UDim.new(0,8)
 
@@ -2580,9 +2689,19 @@ Instance.new("UIPadding",TabContent).PaddingTop=UDim.new(0,8); TabContent.UIPadd
 local StatusBar=Instance.new("Frame"); StatusBar.Size=UDim2.new(1,0,0,STATUSBAR_H); StatusBar.Position=UDim2.new(0,0,1,-STATUSBAR_H); StatusBar.BackgroundColor3=Color3.fromRGB(13,13,14); StatusBar.BackgroundTransparency=0; StatusBar.BorderSizePixel=0; StatusBar.Parent=Panel
 local StatusLine=Instance.new("Frame",StatusBar); StatusLine.Size=UDim2.new(1,0,0,1); StatusLine.Position=UDim2.new(0,0,0,0); StatusLine.BackgroundColor3=DIVIDER_COL; StatusLine.BackgroundTransparency=0.2; StatusLine.BorderSizePixel=0
 local StatusDot=Instance.new("Frame",StatusBar); StatusDot.Size=UDim2.new(0,5,0,5); StatusDot.Position=UDim2.new(0,12,0.5,-2); StatusDot.BackgroundColor3=Color3.fromRGB(90,220,130); StatusDot.BorderSizePixel=0; Instance.new("UICorner",StatusDot).CornerRadius=UDim.new(1,0)
-local StatusLeft=Instance.new("TextLabel",StatusBar); StatusLeft.Size=UDim2.new(0.55,0,1,0); StatusLeft.Position=UDim2.new(0,22,0,0); StatusLeft.BackgroundTransparency=1; StatusLeft.Text="RShift: UI  |  N: Clip  |  F: Fly"; StatusLeft.Font=FONT; StatusLeft.TextSize=9; StatusLeft.TextColor3=TEXT_DIM; StatusLeft.TextXAlignment=Enum.TextXAlignment.Left
+local StatusLeft=Instance.new("TextLabel",StatusBar); StatusLeft.Size=UDim2.new(0.55,0,1,0); StatusLeft.Position=UDim2.new(0,22,0,0); StatusLeft.BackgroundTransparency=1; StatusLeft.Text="K: Menu"; StatusLeft.Font=FONT; StatusLeft.TextSize=9; StatusLeft.TextColor3=TEXT_DIM; StatusLeft.TextXAlignment=Enum.TextXAlignment.Left
 local StatusRight=Instance.new("TextLabel",StatusBar); StatusRight.Size=UDim2.new(0.4,-10,1,0); StatusRight.Position=UDim2.new(0.6,0,0,0); StatusRight.BackgroundTransparency=1; StatusRight.Text=""; StatusRight.Font=FONT; StatusRight.TextSize=9; StatusRight.TextColor3=TEXT_DIM; StatusRight.TextXAlignment=Enum.TextXAlignment.Right
-task.spawn(function() while Panel.Parent do StatusRight.Text = #Players:GetPlayers().." players | "..math.floor(1/RunService.RenderStepped:Wait()).." fps"; task.wait(2) end end)
+task.spawn(function()
+    while Panel.Parent do
+        StatusRight.Text = #Players:GetPlayers().." players | "..math.floor(1/RunService.RenderStepped:Wait()).." fps"
+        local parts = {"K: Menu"}
+        local nc = KeybindStates["Player:NoClip Keybind"]; if nc and nc~="None" then table.insert(parts, nc..": Clip") end
+        local fk = KeybindStates["Player:Fly Keybind"]; if fk and fk~="None" then table.insert(parts, fk..": Fly") end
+        local fc = KeybindStates["Player:Freecam Keybind"]; if fc and fc~="None" then table.insert(parts, fc..": Cam") end
+        StatusLeft.Text = table.concat(parts, "  |  ")
+        task.wait(2)
+    end
+end)
 
 local dragging,dragInput,dragStart,startPos
 TopBar.InputBegan:Connect(function(inp) if inp.UserInputType==Enum.UserInputType.MouseButton1 or inp.UserInputType==Enum.UserInputType.Touch then dragging=true; dragStart=inp.Position; startPos=Panel.Position; inp.Changed:Connect(function() if inp.UserInputState==Enum.UserInputState.End then dragging=false end end) end end)
@@ -2590,10 +2709,72 @@ TopBar.InputChanged:Connect(function(inp) if inp.UserInputType==Enum.UserInputTy
 UserInputService.InputChanged:Connect(function(inp) if inp==dragInput and dragging then local d=inp.Position-dragStart; Panel.Position=UDim2.new(startPos.X.Scale,startPos.X.Offset+d.X,startPos.Y.Scale,startPos.Y.Offset+d.Y) end end)
 
 local guiVisible=true
-MinBtn.MouseButton1Click:Connect(function() guiVisible=not guiVisible; Panel.Visible=guiVisible end)
 UserInputService.InputBegan:Connect(function(inp,gpe) if gpe then return end; if inp.KeyCode==Enum.KeyCode.K then guiVisible=not guiVisible; Panel.Visible=guiVisible end end)
 
+task.spawn(function()
+    task.wait(1.1)
+    LoadStatus.Text="Ready"
+    TweenService:Create(LoadBarFill,TweenInfo.new(0.25,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),{Size=UDim2.new(1,0,1,0)}):Play()
+    task.wait(0.25)
+    Panel.Visible=true
+    TweenService:Create(LoadingScreen,TweenInfo.new(0.4,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),{BackgroundTransparency=1}):Play()
+    for _,d in pairs(LoadingScreen:GetDescendants()) do
+        if d:IsA("TextLabel") then TweenService:Create(d,TweenInfo.new(0.3),{TextTransparency=1}):Play()
+        elseif d:IsA("ImageLabel") then TweenService:Create(d,TweenInfo.new(0.3),{ImageTransparency=1}):Play()
+        elseif d:IsA("UIStroke") then TweenService:Create(d,TweenInfo.new(0.3),{Transparency=1}):Play()
+        elseif d:IsA("Frame") then TweenService:Create(d,TweenInfo.new(0.3),{BackgroundTransparency=1}):Play() end
+    end
+    task.wait(0.4)
+    LoadingScreen:Destroy()
+end)
+
 ActiveCat=nil; local CatButtons={}; local CatLabels={}; local CatIndicators={}; local CatPages={}
+
+SearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+    local q = SearchBox.Text:lower()
+    for name,btn in pairs(CatButtons) do
+        btn.Visible = (q=="" or name:lower():find(q,1,true)~=nil)
+    end
+end)
+
+local PanelFullSize = Panel.Size
+local minimized = false
+local ResizeHandle
+local function SetMinimized(v)
+    if minimized == v then return end
+    minimized = v
+    if ResizeHandle then ResizeHandle.Visible = not v end
+    if v then
+        TweenService:Create(Panel,TweenInfo.new(0.22,Enum.EasingStyle.Quint,Enum.EasingDirection.In),{Size=UDim2.new(PanelFullSize.X.Scale,PanelFullSize.X.Offset,0,TOPBAR_H)}):Play()
+        TweenService:Create(MinBtn,TweenInfo.new(0.2),{Rotation=180}):Play()
+    else
+        TweenService:Create(Panel,TweenInfo.new(0.25,Enum.EasingStyle.Back,Enum.EasingDirection.Out),{Size=PanelFullSize}):Play()
+        TweenService:Create(MinBtn,TweenInfo.new(0.2),{Rotation=0}):Play()
+    end
+end
+MinBtn.MouseButton1Click:Connect(function() SetMinimized(not minimized) end)
+
+ResizeHandle=Instance.new("TextButton",Panel); ResizeHandle.Size=UDim2.new(0,18,0,18); ResizeHandle.Position=UDim2.new(1,-18,1,-18); ResizeHandle.BackgroundTransparency=1; ResizeHandle.Text=""; ResizeHandle.ZIndex=10; ResizeHandle.AutoButtonColor=false
+local ResizeIcon=Instance.new("TextLabel",ResizeHandle); ResizeIcon.Size=UDim2.new(1,0,1,0); ResizeIcon.BackgroundTransparency=1; ResizeIcon.Text="⋰"; ResizeIcon.Font=FONT_BOLD; ResizeIcon.TextSize=16; ResizeIcon.TextColor3=TEXT_DIM; ResizeIcon.ZIndex=10
+ResizeHandle.MouseEnter:Connect(function() TweenService:Create(ResizeIcon,TweenInfo.new(0.12),{TextColor3=ACCENT_GLOW}):Play() end)
+ResizeHandle.MouseLeave:Connect(function() TweenService:Create(ResizeIcon,TweenInfo.new(0.12),{TextColor3=TEXT_DIM}):Play() end)
+local resizing,resizeStart,resizeSizeStart=false,nil,nil
+ResizeHandle.InputBegan:Connect(function(inp)
+    if minimized then return end
+    if inp.UserInputType==Enum.UserInputType.MouseButton1 or inp.UserInputType==Enum.UserInputType.Touch then
+        resizing=true; resizeStart=inp.Position; resizeSizeStart=Panel.Size
+        inp.Changed:Connect(function() if inp.UserInputState==Enum.UserInputState.End then resizing=false end end)
+    end
+end)
+UserInputService.InputChanged:Connect(function(inp)
+    if resizing and (inp.UserInputType==Enum.UserInputType.MouseMovement or inp.UserInputType==Enum.UserInputType.Touch) then
+        local d=inp.Position-resizeStart
+        local newW=math.clamp(resizeSizeStart.X.Offset+d.X,420,900)
+        local newH=math.clamp(resizeSizeStart.Y.Offset+d.Y,300,700)
+        Panel.Size=UDim2.new(0,newW,0,newH)
+        PanelFullSize=Panel.Size
+    end
+end)
 ToggleRegistry = {}
 ToggleStates = {}
 SliderStates = {}
@@ -3174,6 +3355,7 @@ PL:AddSlider("Freecam Speed",10,500,50,10,"",function(v) _G._Funcs.FreecamState.
 PL:AddSlider("Build Platform Size",4,40,12,2,"studs",function(v) _G._Funcs.SetFreecamBlockSize(v) end)
 PL:AddSlider("Corner Build Min Thickness",1,10,2,1,"studs",function(v) _G._Funcs.SetFreecamCornerThickness(v) end)
 PL:AddButton("Clear My Freecam Platforms",function() _G._Funcs.ClearFreecamBlocks(); Notify("Freecam","Platforms cleared",2) end)
+PL:AddButton("Clear Freecam Draw Path",function() _G._Funcs.ClearFreecamDrawing(); Notify("Freecam","Draw path cleared",2) end)
 PL:AddButton("Freecam Build Modes Info",function()
     Notify("Freecam","←→ cycles: Teleport / Build (single platform) / Corner Build (click 2 corners to build a custom-sized block between them, any shape — floor, wall, or pillar). Backspace cancels a pending Corner A.",8)
 end)
@@ -3664,6 +3846,7 @@ end
 local function _rb_scan()
     _rb_all = {}
     local seen = {}
+    local yieldCounter = 0
     local function visit(root)
         pcall(function()
             for _, o in ipairs(root:GetDescendants()) do
@@ -3681,6 +3864,8 @@ local function _rb_scan()
                         }
                     end
                 end
+                yieldCounter = yieldCounter + 1
+                if yieldCounter % 200 == 0 then task.wait() end
             end
         end)
     end
@@ -3771,8 +3956,7 @@ local _spyEnabled = false
 local _spyHooked = false
 local _spyFilter = ""
 
-_rb_scan()
-_rb_applyFilter()
+task.spawn(function() _rb_scan(); _rb_applyFilter() end)
 
 RE:AddButton("Rescan Remotes", function()
     _rb_scan()
@@ -4851,7 +5035,7 @@ local function UnloadPhaze()
     ESP.Enabled=false; Aimbot.Enabled=false; NoClip.Enabled=false; Fly.Enabled=false; KillAura.Enabled=false; HitboxExpander.Enabled=false; AntiCheatBypass.GodMode=false; ServerTroll.ChatSpam=false; ServerTroll.RemoteSpam=false; ServerTroll.ToolSpam=false
     _G._Funcs.SetCustomSpeed(false); _G._Funcs.SetNoClip(false); _G._Funcs.SetInfiniteJump(false); _G._Funcs.SetAntiFall(false); _G._Funcs.SetClickTeleport(false)
     _G._Funcs.SetCustomScale(false); _G._Funcs.SetRandomRagdoll(false); _G._Funcs.StopFESound()
-    _G._Funcs.SetFreecam(false); _G._Funcs.ClearFreecamBlocks(); _G._Funcs.SetLemonFarm(false); _G._Funcs.SetTreadmillFarm(false); if _G._Funcs.SetItemESP then _G._Funcs.SetItemESP(false) end
+    _G._Funcs.SetFreecam(false); _G._Funcs.ClearFreecamBlocks(); _G._Funcs.ClearFreecamDrawing(); _G._Funcs.SetLemonFarm(false); _G._Funcs.SetTreadmillFarm(false); if _G._Funcs.SetItemESP then _G._Funcs.SetItemESP(false) end
     if _G._Funcs.SetMovementRecord then _G._Funcs.SetMovementRecord(false) end
     if _G._Funcs.SetMovementPlay then _G._Funcs.SetMovementPlay(false) end
     for p,_ in pairs(ESPObjects) do RemoveESP(p) end
