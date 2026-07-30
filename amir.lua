@@ -1928,7 +1928,9 @@ local function SetFreecam(e)
                 if h then Camera.CameraSubject = h end
             end
         end)
-        pcall(function() UserInputService.MouseBehavior = FreecamSavedMouseBehavior or Enum.MouseBehavior.Default end)
+        pcall(function() UserInputService.MouseBehavior = Enum.MouseBehavior.Default end)
+        pcall(function() UserInputService.MouseIconEnabled = true end)
+        FreecamSavedMouseBehavior = nil
         if FreecamAnchoredRoot then pcall(function() FreecamAnchoredRoot.Anchored = false end); FreecamAnchoredRoot = nil end
     end
 end
