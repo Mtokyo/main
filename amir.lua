@@ -1830,7 +1830,7 @@ local function SetFreecam(e)
         end)
 
         FreecamArrowConn = UserInputService.InputBegan:Connect(function(inp, gpe)
-            if not FreecamActive or gpe then return end
+            if not FreecamActive then return end
             if inp.KeyCode == Enum.KeyCode.Left or inp.KeyCode == Enum.KeyCode.Right then
                 local curIdx = table.find(FreecamModes, FreecamMode) or 1
                 local dir = (inp.KeyCode == Enum.KeyCode.Right) and 1 or -1
